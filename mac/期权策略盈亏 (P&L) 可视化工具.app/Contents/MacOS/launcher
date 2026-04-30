@@ -1,0 +1,10 @@
+#!/bin/sh
+
+APP_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+HTML_FILE="$APP_DIR/Resources/index.html"
+
+if [ -f "$HTML_FILE" ]; then
+  /usr/bin/open "$HTML_FILE"
+else
+  /usr/bin/osascript -e 'display alert "启动失败" message "未找到内置网页文件 index.html。" as critical'
+fi

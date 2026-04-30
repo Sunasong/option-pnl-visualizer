@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>期权策略盈亏分析器</title>
+  <script src="./vendor/tailwindcss-cdn.js"></script>
+  <script src="./vendor/chart.umd.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    body {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at 18% 0%, rgba(14, 165, 233, 0.18), transparent 28rem),
+        linear-gradient(135deg, #08090c 0%, #111318 48%, #090a0d 100%);
+    }
+
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      margin: 0;
+      appearance: none;
+    }
+
+    input[type="number"] {
+      -moz-appearance: textfield;
+    }
+
+    input[type="range"] {
+      accent-color: #22c55e;
+    }
+
+    .control-input {
+      background: #0b0d11;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #f4f4f5;
+      outline: none;
+      transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+    }
+
+    .control-input:focus {
+      border-color: rgba(45, 212, 191, 0.8);
+      box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.16);
+      background: #0f1218;
+    }
+  </style>
+</head>
+<body class="min-h-screen text-zinc-100">
+  <header class="border-b border-white/10 bg-black/30 backdrop-blur">
+    <div class="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+      <div>
+        <h1 class="text-xl font-semibold text-white sm:text-2xl">期权策略盈亏分析器</h1>
+        <p class="mt-1 text-sm text-zinc-400">Options Strategy P&amp;L Visualizer</p>
+      </div>
+      <div class="hidden items-center gap-2 text-sm text-zinc-300 sm:flex">
+        <span class="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.8)]"></span>
+        实时计算
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[390px_1fr] lg:px-8">
+    <aside class="rounded-lg border border-white/10 bg-[#111319]/95 p-4 shadow-2xl shadow-black/30">
+      <div class="mb-5 flex items-center justify-between">
+        <h2 class="text-base font-semibold text-white">参数面板</h2>
+        <span id="strategyBadge" class="rounded-md border border-cyan-400/30 bg-cyan-400/10 px-2 py-1 text-xs text-cyan-200">牛市看涨价差</span>
+      </div>
+
+      <div class="space-y-5">
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-300">标的资产当前价格</span>
+          <input id="currentPrice" class="control-input w-full rounded-lg px-3 py-2.5 text-sm" type="number" value="100" min="1" step="1" />
+        </label>
+
+        <label class="block">
+          <span class="mb-2 block text-sm font-medium text-zinc-300">策略选择器</span>
+          <select id="strategySelect" class="control-input w-full rounded-lg px-3 py-2.5 text-sm">
+            <optgroup label="基础单腿">
+              <option value="longCall">买入看涨 (Long Call)</option>
+              <option value="shortCall">卖出看涨 (Short Call)</option>
+              <option value="longPut">买入看跌 (Long Put)</option>
+              <option value="shortPut">卖出看跌 (Short Put)</option>
+            </optgroup>
+            <optgroup label="方向型价差">
+              <option value="bullCall" selected>牛市看涨价差 (Bull Call Spread)</option>
+              <option value="bullPut">牛市看跌价差 (Bull Put Spread)</option>
+              <option value="bearPut">熊市看跌价差 (Bear Put Spread)</option>
+              <option value="bearCall">熊市看涨价差 (Bear Call Spread)</option>
+            </optgroup>
+            <optgroup label="波动率交易">
+              <option value="straddle">买入跨式 (Long Straddle)</option>
+              <option value="shortStraddle">卖出跨式 (Short Straddle)</option>
+              <option value="strangle">买入宽跨 (Long Strangle)</option>
+              <option value="shortStrangle">卖出宽跨 (Short Strangle)</option>
+              <option value="longButterfly">买入蝶式 (Long Butterfly)</option>
+              <option value="shortButterfly">空头蝶式 (Short Butterfly)</option>
+              <option value="ironButterfly">铁蝶式 (Iron Butterfly)</option>
+              <option value="ironCondor">铁鹰式 (Iron Condor)</option>
+            </optgroup>
+            <optgroup label="现货 + 期权组合">
+              <option value="coveredCall">备兑开仓 (Covered Call)</option>
+              <option value="protectivePut">保护性认沽 (Protective Put)</option>
+              <option value="collar">领口策略 (Collar)</option>
+              <option value="riskReversal">风险反转 (Risk Reversal)</option>
+            </optgroup>
+            <optgroup label="进阶跨期对角">
+              <option value="ratioSpread">比率价差 (Ratio Spread)</option>
+            </optgroup>
+            <optgroup label="低风险套利">
+              <option value="conversion">转换套利 (Conversion)</option>
+              <option value="reverseConversion">反向转换套利 (Reverse Conversion)</option>
+            </optgroup>
+          </select>
+        </label>
+
+        <section class="rounded-lg border border-white/10 bg-black/20 p-3">
+          <p id="strategyStructure" class="text-sm font-medium text-zinc-200"></p>
+          <p id="strategyNote" class="mt-2 text-xs leading-5 text-zinc-500"></p>
+        </section>
+
+        <section>
+          <div class="mb-3 flex items-center justify-between">
+            <h3 class="text-sm font-semibold text-zinc-200">期权腿配置</h3>
+            <span id="legsCount" class="text-xs text-zinc-500"></span>
+          </div>
+          <div id="legsContainer" class="space-y-3"></div>
+        </section>
+      </div>
+    </aside>
+
+    <section class="space-y-5">
+      <div class="grid gap-3 md:grid-cols-3">
+        <article class="rounded-lg border border-emerald-400/20 bg-[#111319]/95 p-4">
+          <p class="text-sm text-zinc-400">最大预期利润</p>
+          <p id="maxProfit" class="mt-2 text-2xl font-semibold text-emerald-300">--</p>
+        </article>
+        <article class="rounded-lg border border-rose-400/20 bg-[#111319]/95 p-4">
+          <p class="text-sm text-zinc-400">最大预期亏损</p>
+          <p id="maxLoss" class="mt-2 text-2xl font-semibold text-rose-300">--</p>
+        </article>
+        <article class="rounded-lg border border-amber-300/20 bg-[#111319]/95 p-4">
+          <p class="text-sm text-zinc-400">盈亏平衡点</p>
+          <div id="breakevens" class="mt-2 flex min-h-8 flex-wrap items-center gap-2 text-sm text-amber-200">--</div>
+        </article>
+      </div>
+
+      <div class="rounded-lg border border-white/10 bg-[#111319]/95 p-3 shadow-2xl shadow-black/30 sm:p-4">
+        <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base font-semibold text-white">盈亏曲线</h2>
+            <p id="chartRange" class="mt-1 text-xs text-zinc-500"></p>
+          </div>
+          <div class="flex items-center gap-4 text-xs text-zinc-400">
+            <span class="flex items-center gap-1.5"><i class="h-2.5 w-2.5 rounded-full bg-emerald-400"></i>盈利</span>
+            <span class="flex items-center gap-1.5"><i class="h-2.5 w-2.5 rounded-full bg-rose-400"></i>亏损</span>
+            <span class="flex items-center gap-1.5"><i class="h-2.5 w-2.5 rounded-full bg-amber-300"></i>平衡点</span>
+          </div>
+        </div>
+        <div class="h-[360px] sm:h-[430px]">
+          <canvas id="payoffChart"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const LEG_META = {
+      longCall: { label: "买入看涨", direction: "Long Call", tone: "text-emerald-300" },
+      shortCall: { label: "卖出看涨", direction: "Short Call", tone: "text-rose-300" },
+      longPut: { label: "买入看跌", direction: "Long Put", tone: "text-emerald-300" },
+      shortPut: { label: "卖出看跌", direction: "Short Put", tone: "text-rose-300" },
+      longStock: { label: "买入现货", direction: "Long Stock", tone: "text-sky-300" },
+      shortStock: { label: "卖出现货", direction: "Short Stock", tone: "text-orange-300" }
+    };
+
+    const STRATEGIES = {
+      longCall: {
+        label: "买入看涨",
+        structure: "买入 1 张看涨期权。",
+        note: "看涨标的上涨，最大亏损为权利金，上行利润理论无限。",
+        legs: [{ type: "longCall", strikeRatio: 1, premiumRatio: 0.05 }]
+      },
+      shortCall: {
+        label: "卖出看涨",
+        structure: "卖出 1 张看涨期权。",
+        note: "收取权利金，若标的大幅上涨则风险理论无限。",
+        legs: [{ type: "shortCall", strikeRatio: 1, premiumRatio: 0.05 }]
+      },
+      longPut: {
+        label: "买入看跌",
+        structure: "买入 1 张看跌期权。",
+        note: "看跌标的下跌，最大亏损为权利金，下方利润受标的价格不低于 0 限制。",
+        legs: [{ type: "longPut", strikeRatio: 1, premiumRatio: 0.045 }]
+      },
+      shortPut: {
+        label: "卖出看跌",
+        structure: "卖出 1 张看跌期权。",
+        note: "收取权利金，最大亏损发生在标的跌至 0 附近。",
+        legs: [{ type: "shortPut", strikeRatio: 1, premiumRatio: 0.045 }]
+      },
+      bullCall: {
+        label: "牛市看涨价差",
+        structure: "买入低行权价看涨，同时卖出高行权价看涨。",
+        note: "净付权利金，最大利润和最大亏损均有限，适合温和看涨。",
+        legs: [
+          { type: "longCall", strikeRatio: 1, premiumRatio: 0.05 },
+          { type: "shortCall", strikeRatio: 1.1, premiumRatio: 0.02 }
+        ]
+      },
+      bullPut: {
+        label: "牛市看跌价差",
+        structure: "卖出高行权价看跌，同时买入低行权价看跌。",
+        note: "净收权利金，最大利润为净权利金，最大亏损有限，适合温和看涨或看不跌。",
+        legs: [
+          { type: "shortPut", strikeRatio: 1, premiumRatio: 0.045 },
+          { type: "longPut", strikeRatio: 0.9, premiumRatio: 0.015 }
+        ]
+      },
+      bearPut: {
+        label: "熊市看跌价差",
+        structure: "买入高行权价看跌，同时卖出低行权价看跌。",
+        note: "净付权利金，最大利润和最大亏损均有限，适合温和看跌。",
+        legs: [
+          { type: "longPut", strikeRatio: 1.1, premiumRatio: 0.07 },
+          { type: "shortPut", strikeRatio: 1, premiumRatio: 0.03 }
+        ]
+      },
+      bearCall: {
+        label: "熊市看涨价差",
+        structure: "卖出低行权价看涨，同时买入高行权价看涨。",
+        note: "净收权利金，最大利润为净权利金，最大亏损有限，适合温和看跌或看不涨。",
+        legs: [
+          { type: "shortCall", strikeRatio: 1, premiumRatio: 0.05 },
+          { type: "longCall", strikeRatio: 1.1, premiumRatio: 0.02 }
+        ]
+      },
+      straddle: {
+        label: "买入跨式",
+        structure: "同一行权价同时买入看涨和看跌。",
+        note: "押注大幅波动，方向不限；最大亏损为两腿权利金合计。",
+        legs: [
+          { type: "longCall", strikeRatio: 1, premiumRatio: 0.05 },
+          { type: "longPut", strikeRatio: 1, premiumRatio: 0.045 }
+        ]
+      },
+      shortStraddle: {
+        label: "卖出跨式",
+        structure: "同一行权价同时卖出看涨和看跌。",
+        note: "押注低波动，最大利润为权利金合计；上行风险理论无限，下行风险也很高。",
+        legs: [
+          { type: "shortCall", strikeRatio: 1, premiumRatio: 0.05 },
+          { type: "shortPut", strikeRatio: 1, premiumRatio: 0.045 }
+        ]
+      },
+      strangle: {
+        label: "买入宽跨",
+        structure: "买入低行权价看跌，同时买入高行权价看涨。",
+        note: "押注大幅波动，成本通常低于跨式，但需要更大的价格移动。",
+        legs: [
+          { type: "longPut", strikeRatio: 0.95, premiumRatio: 0.03 },
+          { type: "longCall", strikeRatio: 1.05, premiumRatio: 0.032 }
+        ]
+      },
+      shortStrangle: {
+        label: "卖出宽跨",
+        structure: "卖出低行权价看跌，同时卖出高行权价看涨。",
+        note: "押注区间震荡，最大利润为权利金合计；突破区间后风险显著放大。",
+        legs: [
+          { type: "shortPut", strikeRatio: 0.95, premiumRatio: 0.03 },
+          { type: "shortCall", strikeRatio: 1.05, premiumRatio: 0.032 }
+        ]
+      },
+      longButterfly: {
+        label: "买入蝶式",
+        structure: "买入低行权价看涨，卖出 2 张中间行权价看涨，买入高行权价看涨。",
+        note: "押注标的到期靠近中间行权价；最大利润和最大亏损均有限。",
+        legs: [
+          { type: "longCall", strikeRatio: 0.9, premiumRatio: 0.12 },
+          { type: "shortCall", strikeRatio: 1, premiumRatio: 0.052, quantity: 2 },
+          { type: "longCall", strikeRatio: 1.1, premiumRatio: 0.018 }
+        ]
+      },
+      shortButterfly: {
+        label: "空头蝶式",
+        structure: "卖出低行权价看涨，买入 2 张中间行权价看涨，卖出高行权价看涨。",
+        note: "押注价格远离中间行权价；最大利润和最大亏损均有限。",
+        legs: [
+          { type: "shortCall", strikeRatio: 0.9, premiumRatio: 0.12 },
+          { type: "longCall", strikeRatio: 1, premiumRatio: 0.052, quantity: 2 },
+          { type: "shortCall", strikeRatio: 1.1, premiumRatio: 0.018 }
+        ]
+      },
+      ironCondor: {
+        label: "铁鹰式",
+        structure: "买入更低行权价看跌，卖出低行权价看跌，卖出高行权价看涨，买入更高行权价看涨。",
+        note: "押注区间震荡，最大利润为净权利金，双侧风险都被保护腿限定。",
+        legs: [
+          { type: "longPut", strikeRatio: 0.85, premiumRatio: 0.01 },
+          { type: "shortPut", strikeRatio: 0.95, premiumRatio: 0.027 },
+          { type: "shortCall", strikeRatio: 1.05, premiumRatio: 0.028 },
+          { type: "longCall", strikeRatio: 1.15, premiumRatio: 0.012 }
+        ]
+      },
+      ironButterfly: {
+        label: "铁蝶式",
+        structure: "买入低行权价看跌，同时在中间行权价卖出看跌和看涨，再买入高行权价看涨。",
+        note: "押注价格到期靠近中间行权价；风险由两侧保护腿限定。",
+        legs: [
+          { type: "longPut", strikeRatio: 0.9, premiumRatio: 0.015 },
+          { type: "shortPut", strikeRatio: 1, premiumRatio: 0.048 },
+          { type: "shortCall", strikeRatio: 1, premiumRatio: 0.052 },
+          { type: "longCall", strikeRatio: 1.1, premiumRatio: 0.018 }
+        ]
+      },
+      coveredCall: {
+        label: "备兑开仓",
+        structure: "买入现货，同时卖出较高行权价看涨。",
+        note: "现货下跌仍承担下行风险，上方收益被卖出的看涨期权封顶。",
+        legs: [
+          { type: "longStock", entryRatio: 1 },
+          { type: "shortCall", strikeRatio: 1.08, premiumRatio: 0.025 }
+        ]
+      },
+      protectivePut: {
+        label: "保护性认沽",
+        structure: "买入现货，同时买入较低行权价看跌。",
+        note: "用看跌期权保护现货下行风险，同时保留上行参与。",
+        legs: [
+          { type: "longStock", entryRatio: 1 },
+          { type: "longPut", strikeRatio: 0.95, premiumRatio: 0.03 }
+        ]
+      },
+      collar: {
+        label: "领口策略",
+        structure: "买入现货，买入低行权价看跌保护，同时卖出高行权价看涨降低成本。",
+        note: "下方风险和上方收益都被限定，适合已有现货持仓的保护与收益让渡。",
+        legs: [
+          { type: "longStock", entryRatio: 1 },
+          { type: "longPut", strikeRatio: 0.95, premiumRatio: 0.03 },
+          { type: "shortCall", strikeRatio: 1.08, premiumRatio: 0.025 }
+        ]
+      },
+      riskReversal: {
+        label: "风险反转",
+        structure: "默认展示看涨风险反转：卖出较低行权价看跌，买入较高行权价看涨。",
+        note: "常用于用卖出看跌的权利金资助买入看涨；上行收益理论无限，下行风险接近卖出看跌。",
+        legs: [
+          { type: "shortPut", strikeRatio: 0.95, premiumRatio: 0.03 },
+          { type: "longCall", strikeRatio: 1.05, premiumRatio: 0.032 }
+        ]
+      },
+      ratioSpread: {
+        label: "比率价差",
+        structure: "默认展示 1x2 看涨比率价差：买入 1 张低行权价看涨，卖出 2 张高行权价看涨。",
+        note: "同到期比率价差可以准确展示；该默认结构上行风险理论无限。",
+        legs: [
+          { type: "longCall", strikeRatio: 1, premiumRatio: 0.05 },
+          { type: "shortCall", strikeRatio: 1.1, premiumRatio: 0.02, quantity: 2 }
+        ]
+      },
+      conversion: {
+        label: "转换套利",
+        structure: "买入现货，买入同一行权价看跌，卖出同一行权价看涨。",
+        note: "这里展示到期静态盈亏，不含利率、股息、借券成本和交易费用。",
+        legs: [
+          { type: "longStock", entryRatio: 1 },
+          { type: "longPut", strikeRatio: 1, premiumRatio: 0.048 },
+          { type: "shortCall", strikeRatio: 1, premiumRatio: 0.05 }
+        ]
+      },
+      reverseConversion: {
+        label: "反向转换套利",
+        structure: "卖出现货，买入同一行权价看涨，卖出同一行权价看跌。",
+        note: "这里展示到期静态盈亏，不含利率、股息、借券成本和交易费用。",
+        legs: [
+          { type: "shortStock", entryRatio: 1 },
+          { type: "longCall", strikeRatio: 1, premiumRatio: 0.048 },
+          { type: "shortPut", strikeRatio: 1, premiumRatio: 0.05 }
+        ]
+      }
+    };
+
+    const state = {
+      currentPrice: 100,
+      strategy: "bullCall",
+      legs: []
+    };
+
+    const els = {
+      currentPrice: document.getElementById("currentPrice"),
+      strategySelect: document.getElementById("strategySelect"),
+      strategyBadge: document.getElementById("strategyBadge"),
+      strategyStructure: document.getElementById("strategyStructure"),
+      strategyNote: document.getElementById("strategyNote"),
+      legsCount: document.getElementById("legsCount"),
+      legsContainer: document.getElementById("legsContainer"),
+      chartRange: document.getElementById("chartRange"),
+      maxProfit: document.getElementById("maxProfit"),
+      maxLoss: document.getElementById("maxLoss"),
+      breakevens: document.getElementById("breakevens")
+    };
+
+    const roundTo = (value, decimals = 2) => Number(value.toFixed(decimals));
+    const money = (value) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+    const safeNumber = (value, fallback) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+
+    function buildPresetLegs(strategyKey) {
+      const base = Math.max(safeNumber(els.currentPrice.value, 100), 1);
+      return STRATEGIES[strategyKey].legs.map((leg) => {
+        if (leg.type === "longStock" || leg.type === "shortStock") {
+          return {
+            type: leg.type,
+            quantity: leg.quantity ?? 1,
+            entry: roundTo(base * (leg.entryRatio ?? 1), 2)
+          };
+        }
+
+        return {
+          type: leg.type,
+          quantity: leg.quantity ?? 1,
+          strike: roundTo(base * leg.strikeRatio, 0),
+          premium: roundTo(base * leg.premiumRatio, 2)
+        };
+      });
+    }
+
+    function payoffForLeg(leg, s) {
+      const k = leg.strike;
+      const p = leg.premium;
+      const q = leg.quantity ?? 1;
+
+      switch (leg.type) {
+        case "longCall":
+          return q * (Math.max(s - k, 0) - p);
+        case "shortCall":
+          return q * (p - Math.max(s - k, 0));
+        case "longPut":
+          return q * (Math.max(k - s, 0) - p);
+        case "shortPut":
+          return q * (p - Math.max(k - s, 0));
+        case "longStock":
+          return q * (s - leg.entry);
+        case "shortStock":
+          return q * (leg.entry - s);
+        default:
+          return 0;
+      }
+    }
+
+    function totalPayoff(s) {
+      return state.legs.reduce((sum, leg) => sum + payoffForLeg(leg, s), 0);
+    }
+
+    function getSliderBounds(field, value) {
+      const base = Math.max(state.currentPrice, 1);
+      if (field === "strike" || field === "entry") {
+        return {
+          min: Math.max(1, Math.floor(Math.min(base * 0.5, value * 0.8))),
+          max: Math.ceil(Math.max(base * 1.5, value * 1.2, 10)),
+          step: field === "strike" ? 1 : 0.1
+        };
+      }
+
+      return {
+        min: 0,
+        max: Math.max(roundTo(base * 0.25, 1), roundTo(value * 2, 1), 10),
+        step: 0.1
+      };
+    }
+
+    function renderLegs() {
+      const strategy = STRATEGIES[state.strategy];
+      els.strategyBadge.textContent = strategy.label;
+      els.strategyStructure.textContent = strategy.structure;
+      els.strategyNote.textContent = strategy.note;
+      els.legsCount.textContent = `${state.legs.length} 条腿`;
+      els.legsContainer.innerHTML = state.legs.map((leg, index) => {
+        const meta = LEG_META[leg.type];
+        const quantity = leg.quantity ?? 1;
+        const quantityLabel = quantity === 1 ? "" : `<span class="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-xs text-zinc-400">x${quantity}</span>`;
+
+        if (leg.type === "longStock" || leg.type === "shortStock") {
+          const entryBounds = getSliderBounds("entry", leg.entry);
+
+          return `
+            <article class="rounded-lg border border-white/10 bg-[#151922] p-3">
+              <div class="mb-3 flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-white">腿 ${index + 1}</p>
+                  <p class="mt-0.5 text-xs ${meta.tone}">${meta.label} · ${meta.direction}</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  ${quantityLabel}
+                  <span class="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-xs text-zinc-400" data-primary-badge="${index}">入场 ${leg.entry}</span>
+                </div>
+              </div>
+
+              <div class="space-y-3">
+                <label class="block">
+                  <span class="mb-2 flex items-center justify-between text-xs text-zinc-400">
+                    <span>现货入场价</span>
+                    <input
+                      class="control-input w-24 rounded-md px-2 py-1 text-right text-xs"
+                      type="number"
+                      min="0.01"
+                      step="0.1"
+                      value="${leg.entry}"
+                      data-leg-index="${index}"
+                      data-field="entry"
+                    />
+                  </span>
+                  <input
+                    class="w-full"
+                    type="range"
+                    min="${entryBounds.min}"
+                    max="${entryBounds.max}"
+                    step="${entryBounds.step}"
+                    value="${leg.entry}"
+                    data-leg-index="${index}"
+                    data-field="entry"
+                  />
+                </label>
+              </div>
+            </article>
+          `;
+        }
+
+        const strikeBounds = getSliderBounds("strike", leg.strike);
+        const premiumBounds = getSliderBounds("premium", leg.premium);
+
+        return `
+          <article class="rounded-lg border border-white/10 bg-[#151922] p-3">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p class="text-sm font-semibold text-white">腿 ${index + 1}</p>
+                <p class="mt-0.5 text-xs ${meta.tone}">${meta.label} · ${meta.direction}</p>
+              </div>
+              <div class="flex items-center gap-2">
+                ${quantityLabel}
+                <span class="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-xs text-zinc-400" data-primary-badge="${index}">K ${leg.strike}</span>
+              </div>
+            </div>
+
+            <div class="space-y-3">
+              <label class="block">
+                <span class="mb-2 flex items-center justify-between text-xs text-zinc-400">
+                  <span>行权价</span>
+                  <input
+                    class="control-input w-24 rounded-md px-2 py-1 text-right text-xs"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value="${leg.strike}"
+                    data-leg-index="${index}"
+                    data-field="strike"
+                  />
+                </span>
+                <input
+                  class="w-full"
+                  type="range"
+                  min="${strikeBounds.min}"
+                  max="${strikeBounds.max}"
+                  step="${strikeBounds.step}"
+                  value="${leg.strike}"
+                  data-leg-index="${index}"
+                  data-field="strike"
+                />
+              </label>
+
+              <label class="block">
+                <span class="mb-2 flex items-center justify-between text-xs text-zinc-400">
+                  <span>权利金</span>
+                  <input
+                    class="control-input w-24 rounded-md px-2 py-1 text-right text-xs"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value="${leg.premium}"
+                    data-leg-index="${index}"
+                    data-field="premium"
+                  />
+                </span>
+                <input
+                  class="w-full"
+                  type="range"
+                  min="${premiumBounds.min}"
+                  max="${premiumBounds.max}"
+                  step="${premiumBounds.step}"
+                  value="${leg.premium}"
+                  data-leg-index="${index}"
+                  data-field="premium"
+                />
+              </label>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    function createSeries() {
+      const current = Math.max(state.currentPrice, 1);
+      const minX = roundTo(current * 0.7, 2);
+      const maxX = roundTo(current * 1.3, 2);
+      const steps = 240;
+      const data = [];
+
+      for (let i = 0; i <= steps; i += 1) {
+        const x = minX + ((maxX - minX) * i) / steps;
+        data.push({ x: roundTo(x, 4), y: roundTo(totalPayoff(x), 4) });
+      }
+
+      return { minX, maxX, data };
+    }
+
+    function findBreakevens(data) {
+      const points = [];
+      const eps = 1e-7;
+
+      for (let i = 0; i < data.length - 1; i += 1) {
+        const a = data[i];
+        const b = data[i + 1];
+
+        if (Math.abs(a.y) < eps) {
+          points.push(a.x);
+        }
+
+        if ((a.y < 0 && b.y > 0) || (a.y > 0 && b.y < 0)) {
+          const x = a.x + (-a.y * (b.x - a.x)) / (b.y - a.y);
+          points.push(x);
+        }
+      }
+
+      const last = data[data.length - 1];
+      if (Math.abs(last.y) < eps) points.push(last.x);
+
+      return points
+        .map((value) => roundTo(value, 2))
+        .filter((value, index, array) => index === 0 || Math.abs(value - array[index - 1]) > 0.02);
+    }
+
+    function upsideSlope() {
+      return state.legs.reduce((sum, leg) => {
+        const q = leg.quantity ?? 1;
+        if (leg.type === "longCall" || leg.type === "longStock") return sum + q;
+        if (leg.type === "shortCall" || leg.type === "shortStock") return sum - q;
+        return sum;
+      }, 0);
+    }
+
+    function updateSummary(data, breakevens) {
+      const values = data.map((point) => point.y);
+      const maxProfit = Math.max(...values);
+      const maxLoss = Math.min(...values);
+      const slope = upsideSlope();
+
+      els.maxProfit.textContent = slope > 0 ? "无限" : money(maxProfit);
+      els.maxLoss.textContent = slope < 0 ? "无限" : money(maxLoss);
+
+      if (breakevens.length === 0) {
+        els.breakevens.textContent = "无";
+      } else {
+        els.breakevens.innerHTML = breakevens.map((point) => (
+          `<span class="rounded-md border border-amber-300/30 bg-amber-300/10 px-2 py-1">${point.toFixed(2)}</span>`
+        )).join("");
+      }
+    }
+
+    const chart = new Chart(document.getElementById("payoffChart"), {
+      data: {
+        datasets: [
+          {
+            type: "line",
+            label: "总盈亏 P&L",
+            data: [],
+            parsing: false,
+            borderWidth: 2.5,
+            pointRadius: 0,
+            tension: 0.18,
+            fill: {
+              target: "origin",
+              above: "rgba(34, 197, 94, 0.16)",
+              below: "rgba(244, 63, 94, 0.14)"
+            },
+            segment: {
+              borderColor: (ctx) => {
+                const y0 = ctx.p0.parsed.y;
+                const y1 = ctx.p1.parsed.y;
+                if (y0 >= 0 && y1 >= 0) return "#34d399";
+                if (y0 <= 0 && y1 <= 0) return "#fb7185";
+                return "#fbbf24";
+              }
+            }
+          },
+          {
+            type: "line",
+            label: "零轴",
+            data: [],
+            parsing: false,
+            borderColor: "rgba(250, 250, 250, 0.78)",
+            borderDash: [8, 6],
+            borderWidth: 1.5,
+            pointRadius: 0
+          },
+          {
+            type: "scatter",
+            label: "盈亏平衡点",
+            data: [],
+            parsing: false,
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            pointBackgroundColor: "#fbbf24",
+            pointBorderColor: "#09090b",
+            pointBorderWidth: 2
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          intersect: false,
+          mode: "nearest"
+        },
+        plugins: {
+          legend: {
+            position: "top",
+            align: "end",
+            labels: {
+              color: "#d4d4d8",
+              boxWidth: 12,
+              boxHeight: 12,
+              usePointStyle: true
+            }
+          },
+          tooltip: {
+            backgroundColor: "rgba(9, 9, 11, 0.94)",
+            borderColor: "rgba(255, 255, 255, 0.12)",
+            borderWidth: 1,
+            titleColor: "#ffffff",
+            bodyColor: "#e4e4e7",
+            callbacks: {
+              title: (items) => `标的价格：${items[0].parsed.x.toFixed(2)}`,
+              label: (item) => `${item.dataset.label}：${money(item.parsed.y)}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            type: "linear",
+            title: {
+              display: true,
+              text: "到期标的价格",
+              color: "#a1a1aa"
+            },
+            grid: {
+              color: "rgba(255, 255, 255, 0.07)"
+            },
+            ticks: {
+              color: "#a1a1aa",
+              callback: (value) => Number(value).toFixed(0)
+            }
+          },
+          y: {
+            title: {
+              display: true,
+              text: "盈亏 P&L",
+              color: "#a1a1aa"
+            },
+            grid: {
+              color: (ctx) => ctx.tick.value === 0 ? "rgba(250, 250, 250, 0.35)" : "rgba(255, 255, 255, 0.07)"
+            },
+            ticks: {
+              color: "#a1a1aa",
+              callback: (value) => Number(value).toFixed(0)
+            }
+          }
+        }
+      }
+    });
+
+    function renderChart() {
+      const { minX, maxX, data } = createSeries();
+      const breakevens = findBreakevens(data);
+
+      chart.data.datasets[0].data = data;
+      chart.data.datasets[1].data = [{ x: minX, y: 0 }, { x: maxX, y: 0 }];
+      chart.data.datasets[2].data = breakevens.map((x) => ({ x, y: 0 }));
+      chart.options.scales.x.min = minX;
+      chart.options.scales.x.max = maxX;
+      chart.update();
+
+      els.chartRange.textContent = `X 轴范围：${minX.toFixed(2)} - ${maxX.toFixed(2)}（${data.length} 个数据点）`;
+      updateSummary(data, breakevens);
+    }
+
+    function refreshAll() {
+      state.currentPrice = Math.max(safeNumber(els.currentPrice.value, 100), 1);
+      renderLegs();
+      renderChart();
+    }
+
+    function syncLegField(index, field) {
+      const value = state.legs[index][field];
+      els.legsContainer.querySelectorAll(`[data-leg-index="${index}"][data-field="${field}"]`).forEach((input) => {
+        input.value = value;
+      });
+
+      if (field === "strike" || field === "entry") {
+        const badge = els.legsContainer.querySelector(`[data-primary-badge="${index}"]`);
+        if (badge) badge.textContent = field === "strike" ? `K ${value}` : `入场 ${value}`;
+      }
+    }
+
+    els.currentPrice.addEventListener("input", () => {
+      if (els.currentPrice.value === "") return;
+      state.currentPrice = Math.max(safeNumber(els.currentPrice.value, 100), 1);
+      refreshAll();
+    });
+
+    els.currentPrice.addEventListener("change", () => {
+      const normalized = Math.max(safeNumber(els.currentPrice.value, state.currentPrice), 1);
+      state.currentPrice = normalized;
+      els.currentPrice.value = normalized;
+      refreshAll();
+    });
+
+    els.strategySelect.addEventListener("change", (event) => {
+      state.strategy = event.target.value;
+      state.legs = buildPresetLegs(state.strategy);
+      refreshAll();
+    });
+
+    els.legsContainer.addEventListener("input", (event) => {
+      const target = event.target;
+      const index = Number(target.dataset.legIndex);
+      const field = target.dataset.field;
+
+      if (!Number.isInteger(index) || !field) return;
+      if (target.value === "") return;
+
+      const fallback = state.legs[index][field];
+      const value = safeNumber(target.value, fallback);
+      if (field === "premium") {
+        state.legs[index][field] = Math.max(roundTo(value, 2), 0);
+      } else if (field === "entry") {
+        state.legs[index][field] = Math.max(roundTo(value, 2), 0.01);
+      } else {
+        state.legs[index][field] = Math.max(roundTo(value, 0), 1);
+      }
+
+      syncLegField(index, field);
+      renderChart();
+    });
+
+    els.legsContainer.addEventListener("change", (event) => {
+      const target = event.target;
+      const index = Number(target.dataset.legIndex);
+      const field = target.dataset.field;
+
+      if (Number.isInteger(index) && field && target.value === "") {
+        target.value = state.legs[index][field];
+        syncLegField(index, field);
+      }
+
+      renderLegs();
+      renderChart();
+    });
+
+    state.legs = buildPresetLegs(state.strategy);
+    refreshAll();
+  </script>
+</body>
+</html>
