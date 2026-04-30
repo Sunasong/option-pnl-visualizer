@@ -16,13 +16,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          cp "mac/期权策略盈亏 (P&L) 可视化工具-mac.zip" "release-assets/Option-PnL-Visualizer-macOS.zip"
+          cp "windows/Option-PnL-Visualizer-Windows.zip" "release-assets/Option-PnL-Visualizer-Windows.zip"
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
           gh release create "$TAG_NAME" \
-            "mac/期权策略盈亏 (P&L) 可视化工具-mac.zip" \
-            "windows/Option-PnL-Visualizer-Windows.zip" \
+            "release-assets/Option-PnL-Visualizer-macOS.zip" \
+            "release-assets/Option-PnL-Visualizer-Windows.zip" \
             --title "期权策略盈亏可视化工具 $TAG_NAME" \
             --notes "Initial release with macOS and Windows offline packages."
